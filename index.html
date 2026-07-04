@@ -1,0 +1,783 @@
+<!--
+  ChampLog — battle logger & replay viewer for Pokémon Champions
+  © VibeBuild (K.T.) — PolyForm Noncommercial 1.0.0
+  Personal & educational use free; commercial use requires a paid license.
+  Not affiliated with Nintendo, The Pokémon Company, or Pokémon Works.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ChampLog — Battle Replays</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Battle logger, replay viewer, and win-rate stats for Pokémon Champions. Not affiliated with Nintendo or The Pokémon Company.">
+<meta name="theme-color" content="#0D1117">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ChampLog">
+<style>
+  :root{
+    --bg:#0D1117; --surface:#161B22; --surface2:#1D242E; --border:#30363D;
+    --text:#C9D1D9; --bright:#E6EDF2; --muted:#6E7681;
+    --me:#58A6FF; --opp:#DB6D28; --win:#3FB950; --loss:#F85149; --warn:#D29922;
+    --mono:ui-monospace,'SF Mono','Cascadia Mono',Consolas,monospace;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    min-height:100dvh;
+    padding-bottom:calc(64px + env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    position:sticky; top:0; z-index:10;
+    background:rgba(13,17,23,.92); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);
+    padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+    display:flex; align-items:baseline; gap:10px;
+  }
+  header h1{margin:0; font-size:17px; font-weight:800; letter-spacing:-.02em; color:var(--bright)}
+  header h1 .ball{color:var(--me)}
+  header .tag{font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:.04em}
+  main{max-width:560px; margin:0 auto; padding:16px}
+  h2{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:22px 0 10px}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:12px}
+
+  /* buttons */
+  button{
+    font:inherit; color:var(--text); background:var(--surface2);
+    border:1px solid var(--border); border-radius:10px;
+    padding:10px 14px; cursor:pointer; min-height:44px;
+  }
+  button:focus-visible, input:focus-visible{outline:2px solid var(--me); outline-offset:2px}
+  button.primary{background:var(--me); border-color:var(--me); color:#0D1117; font-weight:700}
+  button.good{background:var(--win); border-color:var(--win); color:#0D1117; font-weight:700}
+  button.bad{background:var(--loss); border-color:var(--loss); color:#0D1117; font-weight:700}
+  button.ghost{background:transparent}
+  button.small{min-height:34px; padding:5px 10px; font-size:13px; border-radius:8px}
+  button:disabled{opacity:.4; cursor:default}
+  .row{display:flex; gap:8px; flex-wrap:wrap}
+  .row.split{justify-content:space-between; align-items:center}
+  .grow{flex:1}
+
+  input[type=text]{
+    font:inherit; width:100%; color:var(--bright);
+    background:var(--bg); border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; min-height:44px;
+  }
+  input::placeholder{color:var(--muted)}
+
+  /* pills & chips */
+  .pill{
+    display:inline-block; font-family:var(--mono); font-size:11px; font-weight:600;
+    padding:2px 9px; border-radius:999px; border:1px solid var(--border); letter-spacing:.03em;
+  }
+  .pill.win{color:var(--win); border-color:var(--win)}
+  .pill.loss{color:var(--loss); border-color:var(--loss)}
+  .pill.live{color:var(--warn); border-color:var(--warn)}
+  .chip{
+    border-radius:999px; padding:7px 14px; min-height:38px;
+    background:var(--surface2); border:1px solid var(--border); font-size:14px;
+  }
+  .chip.me.on{background:rgba(88,166,255,.18); border-color:var(--me); color:var(--me); font-weight:600}
+  .chip.opp.on{background:rgba(219,109,40,.18); border-color:var(--opp); color:var(--opp); font-weight:600}
+  .chip.ko{text-decoration:line-through; opacity:.45}
+
+  /* battle list */
+  .b-item{display:block; width:100%; text-align:left; margin-bottom:10px; padding:12px 14px; border-radius:12px}
+  .b-item .teams{font-size:14px; color:var(--bright); margin-top:2px}
+  .b-item .meta{font-family:var(--mono); font-size:11px; color:var(--muted)}
+  .vs{color:var(--muted); font-family:var(--mono); font-size:12px; padding:0 4px}
+  .side-me{color:var(--me)} .side-opp{color:var(--opp)}
+
+  /* record strip */
+  .record{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px}
+  .stat{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center}
+  .stat b{display:block; font-family:var(--mono); font-size:22px; font-weight:600; color:var(--bright); font-variant-numeric:tabular-nums}
+  .stat span{font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted)}
+
+  /* event log */
+  .ev{display:flex; gap:10px; padding:8px 10px; border-radius:8px; margin-bottom:6px; background:var(--surface2); border-left:3px solid var(--muted); font-size:14px}
+  .ev.me{border-left-color:var(--me)} .ev.opp{border-left-color:var(--opp)}
+  .ev .kind{font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); min-width:52px; padding-top:3px}
+  .ev.ko-ev .kind{color:var(--loss)}
+  .ev .body b{color:var(--bright); font-weight:600}
+  .turn-label{font-family:var(--mono); font-size:12px; color:var(--muted); margin:14px 0 6px; letter-spacing:.05em}
+
+  /* replay scrubber */
+  .scrub{display:flex; align-items:center; gap:10px; margin:10px 0}
+  .scrub input[type=range]{flex:1; accent-color:var(--me); min-height:44px}
+  .scrub .n{font-family:var(--mono); font-size:13px; color:var(--bright); min-width:76px; text-align:center; font-variant-numeric:tabular-nums}
+
+  /* stats table */
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  th{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); text-align:left; font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border)}
+  td{padding:8px; border-bottom:1px solid var(--border)}
+  td.num{font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; color:var(--bright)}
+  .bar{height:5px; border-radius:3px; background:var(--surface2); overflow:hidden; margin-top:4px}
+  .bar i{display:block; height:100%; background:var(--win)}
+
+  /* tabs */
+  nav{
+    position:fixed; bottom:0; left:0; right:0; z-index:10;
+    background:rgba(13,17,23,.94); backdrop-filter:blur(8px);
+    border-top:1px solid var(--border);
+    display:flex; padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+  }
+  nav button{flex:1; background:none; border:none; border-radius:10px; color:var(--muted); font-size:12px; font-weight:600; letter-spacing:.03em; min-height:48px}
+  nav button.on{color:var(--me); background:rgba(88,166,255,.1)}
+
+  .empty{color:var(--muted); text-align:center; padding:28px 10px; font-size:14px}
+  .hint{font-size:12.5px; color:var(--muted); margin:6px 0 0}
+  ol.steps{margin:8px 0 0; padding-left:20px; font-size:14px}
+  ol.steps li{margin-bottom:8px}
+  footer{margin:28px 0 8px; text-align:center; font-family:var(--mono); font-size:11px; color:var(--muted)}
+  .hidden{display:none}
+  @media (prefers-reduced-motion:no-preference){
+    .card, .b-item{transition:border-color .15s}
+    .b-item:active{border-color:var(--me)}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="ball">◓</span> ChampLog</h1>
+  <span class="tag">Pokémon Champions replays</span>
+</header>
+
+<main id="main"></main>
+
+<nav id="nav">
+  <button data-tab="home">Battles</button>
+  <button data-tab="stats">Stats</button>
+  <button data-tab="install">Install</button>
+</nav>
+
+<script>
+'use strict';
+/* © VibeBuild (K.T.) — PolyForm Noncommercial 1.0.0 */
+
+const KEY = 'champlog-v1';
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {battles:[]}; } catch { return {battles:[]}; } };
+let db = load();
+const save = () => localStorage.setItem(KEY, JSON.stringify(db));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+
+let view = {tab:'home'};          // {tab, id?, turn?}
+const $main = document.getElementById('main');
+const $nav = document.getElementById('nav');
+
+/* ---------- tiny DOM helpers (textContent only — user names stay safe) ---------- */
+function el(tag, cls, text){
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function btn(label, cls, fn){
+  const b = el('button', cls, label);
+  b.addEventListener('click', fn);
+  return b;
+}
+
+/* ---------- rendering ---------- */
+function render(){
+  $main.textContent = '';
+  for (const b of $nav.querySelectorAll('button'))
+    b.classList.toggle('on', b.dataset.tab === view.tab ||
+      (b.dataset.tab === 'home' && ['setup','log','replay'].includes(view.tab)));
+  ({home, setup, log, replay, stats, install, scan})[view.tab]();
+  window.scrollTo(0,0);
+}
+$nav.addEventListener('click', e => {
+  const t = e.target.closest('button');
+  if (t) { view = {tab:t.dataset.tab}; render(); }
+});
+
+const fmtDate = ts => new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' ' +
+                      new Date(ts).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+const finished = () => db.battles.filter(b => b.result);
+
+/* ---------- HOME ---------- */
+function home(){
+  const done = finished();
+  const w = done.filter(b => b.result==='win').length;
+  const rec = el('div','record');
+  const mk = (v,l) => { const s = el('div','stat'); s.append(el('b','',v), el('span','',l)); return s; };
+  rec.append(mk(String(w),'Wins'), mk(String(done.length - w),'Losses'),
+             mk(done.length ? Math.round(100*w/done.length)+'%' : '—','Win rate'));
+  $main.append(rec);
+
+  $main.append(btn('＋ New battle','primary', () => {
+    view = {tab:'setup'}; render();
+  }));
+  $main.firstChild.after($main.lastChild);
+  $main.append(el('h2','','Battle history'));
+
+  const list = [...db.battles].sort((a,b) => b.date - a.date);
+  if (!list.length)
+    $main.append(el('div','empty','No battles yet. Log your first one — it takes about a minute per game.'));
+
+  for (const b of list){
+    const item = btn('','card b-item', () => {
+      view = b.result ? {tab:'replay', id:b.id, turn:0} : {tab:'log', id:b.id};
+      render();
+    });
+    const top = el('div','row split');
+    top.append(el('span','meta', fmtDate(b.date) + ' · ' + b.format));
+    top.append(el('span','pill ' + (b.result || 'live'), b.result ? b.result.toUpperCase() : 'IN PROGRESS'));
+    const teams = el('div','teams');
+    teams.append(el('span','side-me', b.myLeads.join(' + ') || 'Me'));
+    teams.append(el('span','vs','vs'));
+    teams.append(el('span','side-opp', b.oppLeads.join(' + ') || 'Opponent'));
+    item.append(top, teams);
+    $main.append(item);
+  }
+
+  const io = el('div','row');
+  io.append(btn('Export JSON','ghost small', exportJSON),
+            btn('Import','ghost small', importJSON),
+            db.battles.length ? btn('Delete all','ghost small', () => {
+              if (confirm('Delete every battle on this device?')) { db = {battles:[]}; save(); render(); }
+            }) : el('span'));
+  $main.append(el('h2','','Backup'), io, footer());
+}
+
+function exportJSON(){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(db,null,1)],{type:'application/json'}));
+  a.download = 'champlog-backup.json';
+  a.click();
+}
+function importJSON(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = () => {
+    const f = inp.files[0]; if (!f) return;
+    f.text().then(t => {
+      const d = JSON.parse(t);
+      if (!d || !Array.isArray(d.battles)) throw 0;
+      const have = new Set(db.battles.map(b => b.id));
+      for (const b of d.battles) if (!have.has(b.id)) db.battles.push(b);
+      save(); render();
+    }).catch(() => alert('That file is not a ChampLog backup.'));
+  };
+  inp.click();
+}
+
+/* ---------- SETUP ---------- */
+function setup(){
+  const draft = {format:'singles', my:['','','','','',''], opp:['','','','','','']};
+  $main.append(el('h2','','New battle'));
+
+  const fmtCard = el('div','card');
+  fmtCard.append(el('div','turn-label','FORMAT'));
+  const fmtRow = el('div','row');
+  const single = btn('Singles','chip me on', () => pick('singles'));
+  const dbl = btn('Doubles','chip me', () => pick('doubles'));
+  function pick(f){ draft.format = f;
+    single.classList.toggle('on', f==='singles'); dbl.classList.toggle('on', f==='doubles'); }
+  fmtRow.append(single, dbl); fmtCard.append(fmtRow);
+  $main.append(fmtCard);
+
+  const teamCard = (label, arr, cls) => {
+    const c = el('div','card');
+    c.append(el('div','turn-label ' + cls, label));
+    arr.forEach((_, i) => {
+      const inp = el('input');
+      inp.type = 'text'; inp.placeholder = 'Pokémon ' + (i+1) + (i > 2 ? ' (optional)' : '');
+      inp.autocapitalize = 'words'; inp.style.marginBottom = '8px';
+      inp.addEventListener('input', () => arr[i] = inp.value.trim());
+      c.append(inp);
+    });
+    return c;
+  };
+  $main.append(teamCard('YOUR TEAM', draft.my, 'side-me'),
+               teamCard('OPPONENT (fill in as revealed)', draft.opp, 'side-opp'));
+
+  /* optional screen recording → auto-scan */
+  const vidCard = el('div','card');
+  vidCard.append(el('div','turn-label','SCREEN RECORDING (OPTIONAL)'));
+  const vidInp = el('input'); vidInp.type = 'file'; vidInp.accept = 'video/*';
+  vidInp.addEventListener('change', () => { pendingVideo = vidInp.files[0] || null; });
+  vidCard.append(vidInp,
+    el('p','hint','Record your battle with iOS/Android screen recording while you play, then attach it here. ChampLog scans the footage and finds the moments to label — no logging from memory.'));
+  $main.append(vidCard);
+
+  $main.append(btn('Start battle →','primary', () => {
+    const my = draft.my.filter(Boolean), opp = draft.opp.filter(Boolean);
+    if (!my.length) { alert('Add at least one of your Pokémon.'); return; }
+    const n = draft.format === 'doubles' ? 2 : 1;
+    const bat = {
+      id: uid(), date: Date.now(), format: draft.format, result: null,
+      myTeam: my, oppTeam: opp,
+      myLeads: my.slice(0,n), oppLeads: opp.slice(0,n),
+      turns: [{n:1, events:[]}], hasVideo: !!pendingVideo
+    };
+    db.battles.push(bat); save();
+    view = pendingVideo ? {tab:'scan', id:bat.id} : {tab:'log', id:bat.id};
+    render();
+  }));
+  $main.append(el('p','hint','Leads = first slots. You can add opponent Pokémon later from the log screen.'));
+}
+
+/* ---------- AUTO-SCAN (frame-diff on the battle-text region — pure pixels, no ML) ---------- */
+let pendingVideo = null;              // File chosen on the setup screen
+const videoStore = {};                // battleId → object URL (session only; files are too big for localStorage)
+
+async function scanVideo(file, onProgress){
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  await new Promise((res, rej) => {
+    v.onloadedmetadata = res;
+    v.onerror = () => rej(new Error('Could not read that video. Try an MP4/MOV screen recording.'));
+  });
+  const W = 96, H = Math.max(16, Math.round(W * v.videoHeight / v.videoWidth));
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d', {willReadFrequently:true});
+  const y0 = Math.floor(H * 0.55);    // bottom 45% of the screen — where battle text lives
+  const step = 0.6;
+  let prev = null; const hits = [];
+  for (let t = 0; t < v.duration; t += step){
+    await new Promise((res, rej) => {
+      v.onseeked = res; v.onerror = () => rej(new Error('Video seek failed.'));
+      v.currentTime = Math.max(t, 0.05); // seeking to exactly 0 doesn't fire 'seeked' everywhere
+    });
+    ctx.drawImage(v, 0, 0, W, H);
+    const d = ctx.getImageData(0, y0, W, H - y0).data;
+    if (prev){
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4)
+        sum += Math.abs(d[i] - prev[i]) + Math.abs(d[i+1] - prev[i+1]);
+      if (sum / (d.length / 4) > 26) hits.push(Math.max(0, t - step)); // change landed between samples
+    }
+    prev = new Uint8ClampedArray(d);
+    onProgress(Math.min(1, t / v.duration));
+  }
+  const marks = [];                   // merge bursts (attack animations fire many diffs)
+  for (const t of hits)
+    if (!marks.length || t - marks[marks.length - 1] > 1.8) marks.push(t);
+  return {url, marks};
+}
+
+const mmss = t => Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0');
+
+function scan(){
+  const b = db.battles.find(x => x.id === view.id);
+  if (!b || !pendingVideo) { view = {tab:'home'}; return render(); }
+
+  const head = el('div','row split');
+  head.append(el('span','turn-label','AUTO-SCAN'), el('span','pill live','SCANNING'));
+  const prog = el('div','bar'); const fill = el('i'); fill.style.width = '0%'; prog.append(fill);
+  const status = el('p','hint','Reading your recording — watching the battle-text area for changes…');
+  const card = el('div','card'); card.append(prog, status);
+  $main.append(head, card);
+
+  scanVideo(pendingVideo, p => { fill.style.width = Math.round(p*100) + '%'; })
+    .then(({url, marks}) => {
+      videoStore[b.id] = url;
+      pendingVideo = null;
+      labelUI(b, url, marks);
+    })
+    .catch(err => {
+      status.textContent = err.message + ' You can still log by hand.';
+      card.append(btn('Log manually →','primary', () => { pendingVideo = null; view = {tab:'log', id:b.id}; render(); }));
+    });
+}
+
+function labelUI(b, url, marks){
+  $main.textContent = '';
+  const head = el('div','row split');
+  head.append(el('span','turn-label','LABEL THE MOMENTS'),
+              el('span','pill live', marks.length + ' FOUND'));
+  $main.append(head);
+
+  const vid = el('video'); vid.src = url; vid.controls = true; vid.playsInline = true;
+  vid.style.cssText = 'width:100%;border-radius:12px;border:1px solid var(--border);position:sticky;top:64px;z-index:5;background:#000';
+  $main.append(vid);
+  $main.append(el('p','hint','Each row is a detected moment. Tap the time to jump the video there, pick who did what, delete the noise. Tick “new turn” where a turn starts.'));
+
+  const drafts = marks.map(t => ({t, mon:'', side:'me', kind:'move', text:'', brk:false, del:false}));
+  const listCard = el('div','card');
+
+  const monSelect = d => {
+    const s = el('select');
+    s.style.cssText = 'font:inherit;background:var(--bg);color:var(--bright);border:1px solid var(--border);border-radius:8px;padding:8px;min-height:40px;flex:1';
+    s.append(new Option('— Pokémon —',''));
+    const gMe = document.createElement('optgroup'); gMe.label = 'You';
+    for (const m of b.myTeam) gMe.append(new Option(m, 'me|' + m));
+    const gOp = document.createElement('optgroup'); gOp.label = 'Opponent';
+    for (const m of b.oppTeam) gOp.append(new Option(m, 'opp|' + m));
+    s.append(gMe, gOp);
+    s.addEventListener('change', () => {
+      const [side, mon] = s.value ? s.value.split('|') : ['me',''];
+      d.side = side; d.mon = mon;
+    });
+    return s;
+  };
+  const kindSelect = d => {
+    const s = el('select');
+    s.style.cssText = 'font:inherit;background:var(--bg);color:var(--bright);border:1px solid var(--border);border-radius:8px;padding:8px;min-height:40px';
+    for (const [v,l] of [['move','Move'],['switch','Switch'],['ko','KO'],['status','Status'],['note','Note']])
+      s.append(new Option(l, v));
+    s.addEventListener('change', () => d.kind = s.value);
+    return s;
+  };
+
+  drafts.forEach(d => {
+    const row = el('div');
+    row.style.cssText = 'border-bottom:1px solid var(--border);padding:10px 0';
+    const r1 = el('div','row');
+    const tBtn = btn(mmss(d.t),'small', () => { vid.currentTime = d.t; vid.play(); });
+    tBtn.style.fontFamily = 'var(--mono)';
+    const brk = el('label','hint'); brk.style.cssText = 'display:flex;align-items:center;gap:5px';
+    const cb = el('input'); cb.type = 'checkbox';
+    cb.addEventListener('change', () => d.brk = cb.checked);
+    brk.append(cb, document.createTextNode('new turn'));
+    const del = btn('✕','ghost small', () => { d.del = true; row.remove(); });
+    r1.append(tBtn, brk, el('span','grow'), del);
+    const r2 = el('div','row'); r2.style.marginTop = '8px';
+    r2.append(monSelect(d), kindSelect(d));
+    const txt = el('input'); txt.type = 'text'; txt.placeholder = 'Move / detail (optional)';
+    txt.style.marginTop = '8px';
+    txt.addEventListener('input', () => d.text = txt.value.trim());
+    row.append(r1, r2, txt);
+    listCard.append(row);
+  });
+  if (!marks.length) listCard.append(el('div','empty','No moments detected — the recording may not include battle text. You can still log manually.'));
+  $main.append(listCard);
+
+  $main.append(btn('Build battle log →','primary', () => {
+    const kept = drafts.filter(d => !d.del && (d.mon || d.text));
+    b.turns = [{n:1, events:[]}];
+    for (const d of kept){
+      if (d.brk && b.turns[b.turns.length-1].events.length)
+        b.turns.push({n:b.turns.length + 1, events:[]});
+      b.turns[b.turns.length-1].events.push({side:d.side, kind:d.kind, mon:d.mon, text:d.text, t:d.t});
+    }
+    save(); view = {tab:'log', id:b.id}; render();
+  }));
+  $main.lastChild.style.width = '100%';
+  $main.append(el('p','hint','Next screen: add anything the scan missed, then mark the result. Rows without a Pokémon or text are dropped.'));
+}
+
+/* ---------- LOG ---------- */
+function log(){
+  const b = db.battles.find(x => x.id === view.id);
+  if (!b) { view = {tab:'home'}; return render(); }
+  const turn = b.turns[b.turns.length - 1];
+  const draft = {side:'me', mon:'', kind:'move'};
+
+  const head = el('div','row split');
+  head.append(el('span','turn-label','TURN ' + turn.n), el('span','pill live','LOGGING'));
+  $main.append(head);
+
+  /* side + mon pickers */
+  const pickCard = el('div','card');
+  const sideRow = el('div','row');
+  const monRow = el('div','row'); monRow.style.marginTop = '10px';
+  const meBtn = btn('You','chip me on', () => setSide('me'));
+  const opBtn = btn('Opponent','chip opp', () => setSide('opp'));
+  sideRow.append(meBtn, opBtn);
+
+  function kos(side){
+    const out = new Set();
+    for (const t of b.turns) for (const ev of t.events)
+      if (ev.kind === 'ko' && ev.side === side) out.add(ev.mon);
+    return out;
+  }
+  function setSide(s){
+    draft.side = s; draft.mon = '';
+    meBtn.classList.toggle('on', s==='me'); opBtn.classList.toggle('on', s==='opp');
+    monRow.textContent = '';
+    const team = s === 'me' ? b.myTeam : b.oppTeam;
+    const down = kos(s);
+    for (const m of team){
+      const c = btn(m, 'chip ' + s + (down.has(m) ? ' ko' : ''), () => {
+        draft.mon = m;
+        for (const x of monRow.querySelectorAll('.chip')) x.classList.remove('on');
+        c.classList.add('on');
+      });
+      monRow.append(c);
+    }
+    if (s === 'opp') monRow.append(btn('＋ add','chip opp', () => {
+      const name = prompt('Opponent Pokémon revealed:');
+      if (name && name.trim()) { b.oppTeam.push(name.trim()); save(); setSide('opp'); }
+    }));
+  }
+  pickCard.append(sideRow, monRow);
+  setSide('me');
+  $main.append(pickCard);
+
+  /* action */
+  const actCard = el('div','card');
+  const kindRow = el('div','row');
+  const kinds = [['move','Move'],['switch','Switch'],['ko','KO'],['status','Status'],['note','Note']];
+  const kindBtns = kinds.map(([k, lbl]) => {
+    const c = btn(lbl, 'chip me' + (k === draft.kind ? ' on' : ''), () => {
+      draft.kind = k;
+      kindBtns.forEach(x => x.classList.remove('on')); c.classList.add('on');
+      txt.placeholder = ({move:'Move name / target…', switch:'Switched to…',
+        ko:'Knocked out by… (optional)', status:'Burned, para, Tera, terrain…', note:'Anything worth remembering'})[k];
+    });
+    return c;
+  });
+  kindRow.append(...kindBtns);
+  const txt = el('input'); txt.type = 'text'; txt.placeholder = 'Move name / target…';
+  txt.style.margin = '10px 0';
+  actCard.append(kindRow, txt, btn('Add to turn','primary', () => {
+    if (!draft.mon && draft.kind !== 'note') { alert('Tap a Pokémon first.'); return; }
+    turn.events.push({side:draft.side, kind:draft.kind, mon:draft.mon, text:txt.value.trim()});
+    txt.value = ''; save(); render();
+  }));
+  actCard.lastChild.style.width = '100%';
+  $main.append(actCard);
+
+  /* this turn's events */
+  if (turn.events.length){
+    const evCard = el('div','card');
+    turn.events.forEach((ev, i) => {
+      const row = evEl(ev);
+      row.append(btn('✕','ghost small', () => { turn.events.splice(i,1); save(); render(); }));
+      evCard.append(row);
+    });
+    $main.append(evCard);
+  }
+
+  const ctl = el('div','row');
+  const nextB = btn('Next turn →','', () => { b.turns.push({n:turn.n+1, events:[]}); save(); render(); });
+  nextB.className += ' grow';
+  ctl.append(nextB);
+  $main.append(ctl);
+
+  const endRow = el('div','row'); endRow.style.marginTop = '12px';
+  const endW = btn('I won','good grow', () => end('win'));
+  const endL = btn('I lost','bad grow', () => end('loss'));
+  endRow.append(endW, endL);
+  $main.append(el('h2','','End battle'), endRow);
+  $main.append(btn('Discard this battle','ghost small', () => {
+    if (confirm('Delete this in-progress battle?')) {
+      db.battles = db.battles.filter(x => x.id !== b.id); save(); view = {tab:'home'}; render();
+    }
+  }));
+  $main.lastChild.style.marginTop = '10px';
+
+  function end(r){
+    if (!turn.events.length && b.turns.length > 1) b.turns.pop();
+    b.result = r; save(); view = {tab:'replay', id:b.id, turn:0}; render();
+  }
+}
+
+function evEl(ev){
+  const row = el('div','ev ' + ev.side + (ev.kind === 'ko' ? ' ko-ev' : ''));
+  row.append(el('span','kind', ev.kind));
+  const body = el('div','body grow');
+  const who = el('b','', ev.mon || (ev.side === 'me' ? 'You' : 'Opp'));
+  body.append(who);
+  if (ev.text) body.append(document.createTextNode(' — ' + ev.text));
+  if (ev.kind === 'ko') body.append(document.createTextNode(' fainted'));
+  row.append(body);
+  if (ev.t !== undefined){
+    const ts = el('span','kind', mmss(ev.t));
+    ts.style.minWidth = 'auto';
+    row.append(ts);
+  }
+  return row;
+}
+
+/* ---------- REPLAY ---------- */
+function replay(){
+  const b = db.battles.find(x => x.id === view.id);
+  if (!b) { view = {tab:'home'}; return render(); }
+  const T = b.turns.length;
+  view.turn = Math.max(0, Math.min(view.turn ?? 0, T - 1));
+
+  const head = el('div','row split');
+  head.append(el('span','meta turn-label', fmtDate(b.date) + ' · ' + b.format));
+  head.append(el('span','pill ' + b.result, b.result.toUpperCase()));
+  $main.append(head);
+
+  /* synced footage (re-attach after reload — videos are too big to store) */
+  let vid = null;
+  if (videoStore[b.id]){
+    vid = el('video'); vid.src = videoStore[b.id]; vid.controls = true; vid.playsInline = true;
+    vid.style.cssText = 'width:100%;border-radius:12px;border:1px solid var(--border);background:#000;margin-bottom:12px';
+    $main.append(vid);
+  } else if (b.hasVideo){
+    const attach = btn('Attach recording to sync replay','ghost', () => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'video/*';
+      inp.onchange = () => {
+        if (inp.files[0]) { videoStore[b.id] = URL.createObjectURL(inp.files[0]); render(); }
+      };
+      inp.click();
+    });
+    attach.style.width = '100%'; attach.style.marginBottom = '12px';
+    $main.append(attach);
+  }
+
+  /* teams with KO state up to current turn */
+  const downBy = side => {
+    const out = new Set();
+    for (let i = 0; i <= view.turn; i++)
+      for (const ev of b.turns[i].events)
+        if (ev.kind === 'ko' && ev.side === side) out.add(ev.mon);
+    return out;
+  };
+  const teamRow = (team, side) => {
+    const r = el('div','row'); r.style.marginBottom = '8px';
+    const down = downBy(side);
+    for (const m of team) r.append(el('span', 'chip ' + side + ' on' + (down.has(m) ? ' ko' : ''), m));
+    return r;
+  };
+  const tc = el('div','card');
+  tc.append(el('div','turn-label side-me','YOU'), teamRow(b.myTeam,'me'),
+            el('div','turn-label side-opp','OPPONENT'), teamRow(b.oppTeam.length ? b.oppTeam : ['?'],'opp'));
+  $main.append(tc);
+
+  /* scrubber */
+  const sc = el('div','scrub');
+  const prev = btn('‹','small', () => { view.turn--; render(); });
+  const next = btn('›','small', () => { view.turn++; render(); });
+  prev.disabled = view.turn === 0; next.disabled = view.turn === T - 1;
+  const range = el('input'); range.type = 'range'; range.min = 0; range.max = T - 1; range.value = view.turn;
+  range.addEventListener('input', () => { view.turn = +range.value; render(); });
+  sc.append(prev, range, next);
+  $main.append(sc, el('div','scrub'));
+  $main.lastChild.append(el('span','n grow', 'Turn ' + (view.turn + 1) + ' / ' + T));
+
+  /* events of current turn */
+  const evc = el('div','card');
+  const evs = b.turns[view.turn].events;
+  if (!evs.length) evc.append(el('div','empty','Nothing logged this turn.'));
+  for (const ev of evs){
+    const row = evEl(ev);
+    if (vid && ev.t !== undefined){
+      row.style.cursor = 'pointer';
+      row.addEventListener('click', () => { vid.currentTime = ev.t; vid.play(); vid.scrollIntoView({behavior:'smooth'}); });
+    }
+    evc.append(row);
+  }
+  if (vid) evc.append(el('p','hint','Tap an event to jump the video to that moment.'));
+  $main.append(evc);
+
+  const fr = el('div','row');
+  fr.append(btn('← All battles','ghost grow', () => { view = {tab:'home'}; render(); }),
+            btn('Delete','ghost small', () => {
+              if (confirm('Delete this battle?')) {
+                db.battles = db.battles.filter(x => x.id !== b.id); save(); view = {tab:'home'}; render();
+              }
+            }));
+  $main.append(fr);
+}
+
+/* ---------- STATS ---------- */
+function stats(){
+  const done = finished();
+  $main.append(el('h2','','Overview'));
+  const w = done.filter(b => b.result === 'win').length;
+  const rec = el('div','record');
+  const mk = (v,l) => { const s = el('div','stat'); s.append(el('b','',v), el('span','',l)); return s; };
+  rec.append(mk(String(done.length),'Battles'), mk(String(w),'Wins'),
+             mk(done.length ? Math.round(100*w/done.length)+'%' : '—','Win rate'));
+  $main.append(rec);
+
+  if (!done.length){
+    $main.append(el('div','empty','Finish a battle and your lead win rates and KO leaders show up here.'), footer());
+    return;
+  }
+
+  /* by lead */
+  const leads = {};
+  for (const b of done){
+    const k = b.myLeads.join(' + ') || '—';
+    leads[k] = leads[k] || {n:0, w:0};
+    leads[k].n++; if (b.result === 'win') leads[k].w++;
+  }
+  $main.append(el('h2','','Win rate by your lead'));
+  const t1 = el('table');
+  t1.append(theadOf(['Lead','Games','Win %']));
+  const tb1 = el('tbody');
+  for (const [k,v] of Object.entries(leads).sort((a,b) => b[1].n - a[1].n)){
+    const tr = el('tr');
+    const tdL = el('td','', k);
+    const pct = Math.round(100 * v.w / v.n);
+    const bar = el('div','bar'); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
+    tdL.append(bar);
+    tr.append(tdL, el('td','num', String(v.n)), el('td','num', pct + '%'));
+    tb1.append(tr);
+  }
+  t1.append(tb1);
+  $main.append(wrap(t1));
+
+  /* KO leaders: KOs scored by opponent side vs your mons and vice versa —
+     count KO events per victim's opposite side is unknowable, so count faints */
+  const faints = {me:{}, opp:{}};
+  for (const b of done) for (const t of b.turns) for (const ev of t.events)
+    if (ev.kind === 'ko' && ev.mon) faints[ev.side][ev.mon] = (faints[ev.side][ev.mon] || 0) + 1;
+  $main.append(el('h2','','Most fainted (yours — who to protect)'));
+  $main.append(wrap(faintTable(faints.me)));
+  $main.append(el('h2','','Most KO’d opponents'));
+  $main.append(wrap(faintTable(faints.opp)));
+  $main.append(footer());
+
+  function faintTable(map){
+    const t = el('table'); t.append(theadOf(['Pokémon','Faints']));
+    const tb = el('tbody');
+    const rows = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0,8);
+    if (!rows.length){ const tr = el('tr'); tr.append(el('td','', '—'), el('td','num','0')); tb.append(tr); }
+    for (const [m,n] of rows){ const tr = el('tr'); tr.append(el('td','',m), el('td','num',String(n))); tb.append(tr); }
+    t.append(tb); return t;
+  }
+  function theadOf(cols){
+    const th = el('thead'); const tr = el('tr');
+    for (const c of cols) tr.append(el('th','',c));
+    th.append(tr); return th;
+  }
+  function wrap(t){ const d = el('div','card'); d.style.overflowX = 'auto'; d.append(t); return d; }
+}
+
+/* ---------- INSTALL ---------- */
+function install(){
+  $main.append(el('h2','','Put ChampLog on your home screen'));
+  const c1 = el('div','card');
+  c1.append(el('div','turn-label side-me','IPHONE / IPAD (SAFARI)'));
+  const o1 = el('ol','steps');
+  ['Open this page in Safari (not inside another app’s browser).',
+   'Tap the Share button — the square with the arrow.',
+   'Scroll down and tap “Add to Home Screen”, then Add.',
+   'ChampLog now opens full-screen like an app, even offline once loaded.'
+  ].forEach(s => o1.append(el('li','',s)));
+  c1.append(o1);
+  const c2 = el('div','card');
+  c2.append(el('div','turn-label side-opp','ANDROID (CHROME)'));
+  const o2 = el('ol','steps');
+  ['Open this page in Chrome.',
+   'Tap the ⋮ menu in the top-right corner.',
+   'Tap “Add to Home screen”, then Add.'
+  ].forEach(s => o2.append(el('li','',s)));
+  c2.append(o2);
+  $main.append(c1, c2);
+  $main.append(el('p','hint','Battles are stored on this device (and in this browser). Use Export JSON on the Battles tab to back up or move between devices.'));
+  $main.append(footer());
+}
+
+function footer(){
+  const f = el('footer','', '© VibeBuild (K.T.) · PolyForm Noncommercial 1.0.0 · not affiliated with Nintendo / TPC');
+  return f;
+}
+
+render();
+
+if ('serviceWorker' in navigator)
+  navigator.serviceWorker.register('sw.js').catch(() => {}); // offline is a bonus, not a requirement
+</script>
+</body>
+</html>
