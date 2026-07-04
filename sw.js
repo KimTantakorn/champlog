@@ -1,5 +1,5 @@
 /* ChampLog service worker — © VibeBuild (K.T.) — PolyForm Noncommercial 1.0.0 */
-const CACHE = 'champlog-v2';
+const CACHE = 'champlog-v3';
 const ASSETS = ['.', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

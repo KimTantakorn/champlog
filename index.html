@@ -668,6 +668,13 @@ function replay(){
   if (vid) evc.append(el('p','hint','Tap an event to jump the video to that moment.'));
   $main.append(evc);
 
+  $main.append(el('h2','','Export'));
+  const ex = el('div','row');
+  ex.append(btn('Showdown replay (.html)','ghost grow', () => exportShowdown(b, true)),
+            btn('.log','ghost small', () => exportShowdown(b, false)));
+  $main.append(ex,
+    el('p','hint','The .html opens in the Pokémon Showdown replay player with animated sprites (needs internet once to load the player). Sprites appear when names match real species. .log is the raw Showdown protocol.'));
+
   const fr = el('div','row');
   fr.append(btn('← All battles','ghost grow', () => { view = {tab:'home'}; render(); }),
             btn('Delete','ghost small', () => {
@@ -676,6 +683,89 @@ function replay(){
               }
             }));
   $main.append(fr);
+}
+
+/* ---------- SHOWDOWN EXPORT ---------- */
+const sdSafe = s => (s || '').replace(/[|\n\r]/g, ' ').trim();
+
+function showdownLog(b){
+  const L = [];
+  const n = b.format === 'doubles' ? 2 : 1;
+  L.push('|player|p1|You|265|', '|player|p2|Opponent|266|');
+  L.push('|teamsize|p1|' + Math.max(b.myTeam.length, 1));
+  L.push('|teamsize|p2|' + Math.max(b.oppTeam.length, 1));
+  L.push('|gametype|' + b.format, '|gen|9', '|tier|[Gen 9] Custom Game');
+  L.push('|clearpoke');
+  for (const m of b.myTeam) L.push('|poke|p1|' + sdSafe(m) + '|');
+  for (const m of b.oppTeam) L.push('|poke|p2|' + sdSafe(m) + '|');
+  L.push('|teampreview', '|start');
+
+  /* slot tracking: exact for singles; doubles uses first free slot (approximate) */
+  const active = {me: Array(n).fill(null), opp: Array(n).fill(null)};
+  const pre = s => s === 'me' ? 'p1' : 'p2';
+  const ref = (s, i) => pre(s) + 'ab'[i] + ': ' + sdSafe(active[s][i]);
+  const swIn = (s, mon) => {
+    const a = active[s];
+    if (a.indexOf(mon) >= 0) return a.indexOf(mon);
+    let i = a.indexOf(null); if (i < 0) i = 0;
+    a[i] = mon;
+    L.push('|switch|' + ref(s, i) + '|' + sdSafe(mon) + '|100/100');
+    return i;
+  };
+  const ensure = (s, mon) => {
+    const i = active[s].indexOf(mon);
+    return i >= 0 ? i : swIn(s, mon);
+  };
+  b.myLeads.forEach(m => swIn('me', m));
+  b.oppLeads.forEach(m => swIn('opp', m));
+
+  for (const t of b.turns){
+    L.push('|turn|' + t.n);
+    for (const ev of t.events){
+      const s = ev.side, o = s === 'me' ? 'opp' : 'me';
+      if (ev.kind === 'move' && ev.mon){
+        const i = ensure(s, ev.mon);
+        const tgt = active[o].findIndex(x => x);
+        L.push('|move|' + ref(s, i) + '|' + (sdSafe(ev.text) || '(unrecorded move)') +
+               (tgt >= 0 ? '|' + ref(o, tgt) : '|'));
+      } else if (ev.kind === 'switch' && ev.mon){
+        const a = active[s];
+        if (a.indexOf(ev.mon) < 0){
+          let i = a.indexOf(null); if (i < 0) i = 0;
+          a[i] = ev.mon;
+          L.push('|switch|' + ref(s, i) + '|' + sdSafe(ev.mon) + '|100/100');
+        }
+      } else if (ev.kind === 'ko' && ev.mon){
+        const i = ensure(s, ev.mon);
+        L.push('|faint|' + ref(s, i));
+        active[s][i] = null;
+      } else {
+        L.push('|-message|' + (ev.mon ? sdSafe(ev.mon) + ': ' : '') + (sdSafe(ev.text) || ev.kind));
+      }
+    }
+  }
+  L.push('|win|' + (b.result === 'win' ? 'You' : 'Opponent'));
+  return L.join('\n');
+}
+
+function dl(name, content, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type}));
+  a.download = name; a.click();
+}
+
+function exportShowdown(b, asHtml){
+  const log = showdownLog(b);
+  const name = 'champlog-' + new Date(b.date).toISOString().slice(0,10);
+  if (!asHtml) { dl(name + '.log', log, 'text/plain'); return; }
+  const html = '<!DOCTYPE html>\n<meta charset="utf-8" />\n<!-- version 1 -->\n' +
+    '<title>' + name + '</title>\n' +
+    '<div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">\n' +
+    '<div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div>\n' +
+    '</div>\n' +
+    '<script type="text/plain" class="battle-log-data">\n' + log + '\n<\/script>\n' +
+    '<script src="https://play.pokemonshowdown.com/js/replay-embed.js"><\/script>\n';
+  dl(name + '.html', html, 'text/html');
 }
 
 /* ---------- STATS ---------- */
@@ -765,6 +855,19 @@ function install(){
   ].forEach(s => o2.append(el('li','',s)));
   c2.append(o2);
   $main.append(c1, c2);
+
+  const c3 = el('div','card');
+  c3.append(el('div','turn-label','AUTO-RECORD YOUR BATTLES (IOS SHORTCUTS)'));
+  const o3 = el('ol','steps');
+  ['Open the Shortcuts app → Automation → ＋ New Automation.',
+   'Choose the “App” trigger → select Pokémon Champions → “Is Opened” → Run Immediately (turn off “Ask Before Running”).',
+   'Add the screen-recording action (search “record” in actions) so recording starts by itself when the game opens. If your iOS version doesn’t offer it, one swipe in Control Center does the same.',
+   'Optionally add a second automation: Champions “Is Closed” → stop recording.',
+   'After playing, attach the recording in ChampLog’s New battle → auto-scan does the rest.'
+  ].forEach(s => o3.append(el('li','',s)));
+  c3.append(o3);
+  $main.append(c3);
+
   $main.append(el('p','hint','Battles are stored on this device (and in this browser). Use Export JSON on the Battles tab to back up or move between devices.'));
   $main.append(footer());
 }
